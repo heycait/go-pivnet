@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"math"
 	"os"
+	"github.com/pivotal-cf/go-pivnet/logger"
+	"github.com/pivotal-cf/go-pivnet/logger/loggerfakes"
 )
 
 type EOFReader struct{}
@@ -51,12 +53,14 @@ var _ = Describe("Downloader", func() {
 		ranger              *fakes.Ranger
 		bar                 *fakes.Bar
 		downloadLinkFetcher *fakes.DownloadLinkFetcher
+		logger				logger.Logger
 	)
 
 	BeforeEach(func() {
 		httpClient = &fakes.HTTPClient{}
 		ranger = &fakes.Ranger{}
 		bar = &fakes.Bar{}
+		logger = &loggerfakes.FakeLogger{}
 
 		bar.NewProxyReaderStub = func(reader io.Reader) io.Reader { return reader }
 
@@ -191,6 +195,7 @@ var _ = Describe("Downloader", func() {
 				HTTPClient: httpClient,
 				Ranger:     ranger,
 				Bar:        bar,
+				Logger:		logger,
 			}
 
 			tmpFile, err := ioutil.TempFile("", "")
@@ -280,6 +285,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				tmpFile, err := ioutil.TempFile("", "")
@@ -334,6 +340,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				tmpFile, err := ioutil.TempFile("", "")
@@ -384,6 +391,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				tmpFile, err := ioutil.TempFile("", "")
@@ -434,6 +442,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -450,6 +459,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: nil,
 					Ranger:     nil,
 					Bar:        nil,
+					Logger:		logger,
 				}
 				downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
 					return "%%%", nil
@@ -468,6 +478,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     nil,
 					Bar:        nil,
+					Logger:		logger,
 				}
 
 				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
@@ -492,6 +503,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        nil,
+					Logger:		logger,
 				}
 
 				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
@@ -526,6 +538,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -566,6 +579,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -606,6 +620,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Logger:		logger,
 				}
 
 				closedFile, err := ioutil.TempFile("", "")
