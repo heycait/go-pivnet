@@ -44,6 +44,58 @@ type Client struct {
 	Logger     logger.Logger
 }
 
+func GetFileChunkNames(location string, ranges []Range) []string {
+	var list []string
+	for _, r := range ranges {
+		fileName := fmt.Sprintf("%s_%d", location, r.Lower)
+		list = append(list, fileName)
+	}
+	return list
+}
+
+func CleanupFileChunks(fileChunkNames []string) error {
+	for _, fileChunkName := range fileChunkNames {
+		err := os.Remove(fileChunkName)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func CombineFileChunks(fileWriter *os.File, fileChunkNames []string) error {
+	fileInfo, err := fileWriter.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to read information from output file: %s", err)
+	}
+	file, err := os.OpenFile(fileWriter.Name(), os.O_RDWR, fileInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("failed to open file for writing: %s", err)
+	}
+
+	for _, fileChunkName := range fileChunkNames {
+		fileChunk, err := os.Open(fileChunkName)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(file, fileChunk)
+		errClose := fileChunk.Close()
+		if err != nil {
+			return err
+		}
+		if errClose != nil {
+			return errClose
+		}
+	}
+	err = file.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c Client) Get(
 	location *os.File,
 	downloadLinkFetcher downloadLinkFetcher,
@@ -87,22 +139,22 @@ func (c Client) Get(
 	c.Bar.Kickoff()
 
 	defer c.Bar.Finish()
-	fileInfo, err := location.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to read information from output file: %s", err)
-	}
 
 	var g errgroup.Group
-	for _, r := range ranges {
-		byteRange := r
+	fileNameChunks := GetFileChunkNames(location.Name(), ranges)
 
-		fileWriter, err := os.OpenFile(location.Name(), os.O_RDWR, fileInfo.Mode())
-		if err != nil {
-			return fmt.Errorf("failed to open file for writing: %s", err)
-		}
+	for i, r := range ranges {
+		byteRange := r
+		fileName := fileNameChunks[i]
 
 		g.Go(func() error {
-			err := c.retryableRequest(contentURL, byteRange.HTTPHeader, fileWriter, byteRange.Lower, downloadLinkFetcher)
+			fileWriter, err := os.Create(fileName)
+
+			if err != nil {
+				return fmt.Errorf("failed to open file for writing: %s %s", err, fileName)
+			}
+			defer fileWriter.Close()
+			err = c.retryableRequest(contentURL, byteRange.HTTPHeader, fileWriter, byteRange.Lower, downloadLinkFetcher)
 			if err != nil {
 				return fmt.Errorf("failed during retryable request: %s", err)
 			}
@@ -112,7 +164,15 @@ func (c Client) Get(
 	}
 
 	if err := g.Wait(); err != nil {
-		return err
+		return fmt.Errorf("download failed: %s", err)
+	}
+
+	if err := CombineFileChunks(location, fileNameChunks); err != nil {
+		return fmt.Errorf("failed to combine file chunks: %s", err)
+	}
+
+	if err := CleanupFileChunks(fileNameChunks); err != nil {
+		return fmt.Errorf("failed to cleanup file chunks: %s", err)
 	}
 
 	return nil
@@ -120,11 +180,10 @@ func (c Client) Get(
 
 func (c Client) retryableRequest(contentURL string, rangeHeader http.Header, fileWriter *os.File, startingByte int64, downloadLinkFetcher downloadLinkFetcher) error {
 	currentURL := contentURL
-	defer fileWriter.Close()
 
 	var err error
 Retry:
-	_, err = fileWriter.Seek(startingByte, 0)
+	_, err = fileWriter.Seek(0, 0)
 	if err != nil {
 		return fmt.Errorf("failed to seek to correct byte of output file: %s", err)
 	}

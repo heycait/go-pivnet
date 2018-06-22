@@ -18,6 +18,7 @@ import (
 	"net"
 	"syscall"
 	"math"
+	"os"
 )
 
 type EOFReader struct{}
@@ -63,6 +64,79 @@ var _ = Describe("Downloader", func() {
 		downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
 			return "https://example.com/some-file", nil
 		}
+	})
+
+	Describe("GetFileChunkNames", func() {
+		It("returns an array of file names", func() {
+			location := "location"
+			ranges, _ := download.NewRanger(2).BuildRange(2)
+
+			result := download.GetFileChunkNames(location, ranges)
+
+			Expect(len(result)).To(Equal(len(ranges)))
+			Expect(result[0]).To(Equal(fmt.Sprintf("%s_%d", location, 0)))
+			Expect(result[1]).To(Equal(fmt.Sprintf("%s_%d", location, 1)))
+		})
+	})
+
+	Describe("CombineFileChunks", func() {
+		It("puts files back together", func() {
+			var err error
+			file, err := ioutil.TempFile("", "")
+			Expect(err).NotTo(HaveOccurred())
+
+			fileA, err := ioutil.TempFile("", "")
+			Expect(err).NotTo(HaveOccurred())
+			fileB, err := ioutil.TempFile("", "")
+			Expect(err).NotTo(HaveOccurred())
+			fileC, err := ioutil.TempFile("", "")
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = fileA.WriteString("A")
+			Expect(err).NotTo(HaveOccurred())
+			_, err = fileB.WriteString("B")
+			Expect(err).NotTo(HaveOccurred())
+			_, err = fileB.WriteString("C")
+			Expect(err).NotTo(HaveOccurred())
+
+			err = fileA.Close()
+			Expect(err).NotTo(HaveOccurred())
+			err = fileB.Close()
+			Expect(err).NotTo(HaveOccurred())
+			err = fileC.Close()
+			Expect(err).NotTo(HaveOccurred())
+
+			err = download.CombineFileChunks(file, []string{fileA.Name(), fileB.Name(), fileC.Name()})
+			Expect(err).NotTo(HaveOccurred())
+
+			result, err := ioutil.ReadFile(file.Name())
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result).To(Equal([]byte("ABC")))
+		})
+	})
+
+	Describe("CleanupChunkFiles", func() {
+		It("deletes all the files", func() {
+			var err error
+			fileChunk1, err := ioutil.TempFile("", "file1")
+			Expect(err).NotTo(HaveOccurred())
+			fileChunk2, err := ioutil.TempFile("", "file2")
+			Expect(err).NotTo(HaveOccurred())
+			fileChunk3, err := ioutil.TempFile("", "file3")
+			Expect(err).NotTo(HaveOccurred())
+
+			fileChunkNames := []string{ fileChunk1.Name(), fileChunk2.Name(), fileChunk3.Name() }
+			err = download.CleanupFileChunks(fileChunkNames)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = os.OpenFile(fileChunk1.Name(), os.O_RDWR, 0)
+			Expect(err).To(HaveOccurred())
+			_, err = os.OpenFile(fileChunk2.Name(), os.O_RDWR, 0)
+			Expect(err).To(HaveOccurred())
+			_, err = os.OpenFile(fileChunk3.Name(), os.O_RDWR, 0)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Describe("Get", func() {
@@ -458,7 +532,7 @@ var _ = Describe("Downloader", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = downloader.Get(file, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError("failed during retryable request: download request failed: failed GET"))
+				Expect(err).To(MatchError("download failed: failed during retryable request: download request failed: failed GET"))
 			})
 		})
 
@@ -498,7 +572,7 @@ var _ = Describe("Downloader", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				err = downloader.Get(file, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError("failed during retryable request: during GET unexpected status code was returned: 500"))
+				Expect(err).To(MatchError("download failed: failed during retryable request: during GET unexpected status code was returned: 500"))
 			})
 		})
 
