@@ -10,6 +10,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/cavaliercoder/grab",
+			"repository": "https://github.com/cavaliercoder/grab",
+			"vcs": "git",
+			"revision": "b7c6f788e7cbd3afa871543749c38b7a3abeb7e4",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/go-ole/go-ole",
 			"repository": "https://github.com/go-ole/go-ole",
 			"vcs": "git",
