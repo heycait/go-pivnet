@@ -15,6 +15,7 @@ import (
 	"github.com/pivotal-cf/go-pivnet/download"
 	"github.com/pivotal-cf/go-pivnet/logger"
 	"log"
+	"github.com/cavaliercoder/grab"
 )
 
 const (
@@ -71,20 +72,12 @@ func NewClient(
 		},
 	}
 
-	downloadClient := &http.Client{
-		Timeout: 0,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: config.SkipSSLValidation,
-			},
-			Proxy: http.ProxyFromEnvironment,
-			DisableKeepAlives: true,
-		},
-	}
+	downloadClient := grab.NewClient()
 
 	ranger := download.NewRanger(concurrentDownloads)
 	downloader := download.Client{
-		HTTPClient: downloadClient,
+		HTTPClient: httpClient,
+		DownloadClient: downloadClient,
 		Ranger:     ranger,
 		Logger:     logger,
 	}
