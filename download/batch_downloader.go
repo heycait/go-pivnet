@@ -102,7 +102,7 @@ func WaitForComplete(downloadBatchChannel <-chan *grab.Response) ErrorDownload{
 				if response != nil && response.BytesPerSecond() > 0 {
 					stalledDownloadTimer.Reset(timeoutDuration)
 				} else {
-					//everything is ok
+					//a download has stalled
 				}
 			}
 
