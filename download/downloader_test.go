@@ -50,28 +50,21 @@ func (ne NetError) Timeout() bool {
 var _ = Describe("Downloader", func() {
 	var (
 		httpClient          *fakes.HTTPClient
-		downloadClient		*fakes.DownloadClient
+		batchDownloader     *fakes.BatchDownloader
 		ranger              *fakes.Ranger
 		downloadLinkFetcher *fakes.DownloadLinkFetcher
-		logger				logger.Logger
+		logger              logger.Logger
 	)
 
 	BeforeEach(func() {
 		httpClient = &fakes.HTTPClient{}
-		downloadClient = &fakes.DownloadClient{}
+		batchDownloader = &fakes.BatchDownloader{}
 		ranger = &fakes.Ranger{}
 		logger = &loggerfakes.FakeLogger{}
 
 		downloadLinkFetcher = &fakes.DownloadLinkFetcher{}
 		downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
 			return "https://example.com/some-file", nil
-		}
-		downloadClient.DoBatchStub = func(workers int, request ...*grab.Request) <-chan *grab.Response {
-			batchResponseChannel := make(chan *grab.Response)
-			go func() {
-				batchResponseChannel <- nil //finish download
-			}()
-			return batchResponseChannel
 		}
 	})
 
@@ -187,15 +180,14 @@ var _ = Describe("Downloader", func() {
 			fileNameChunks := download.GetFileChunkNames(tmpFile.Name(), ranges)
 			err = ioutil.WriteFile(fileNameChunks[0], []byte("fake produ"), 0644)
 			Expect(err).NotTo(HaveOccurred())
-
 			err = ioutil.WriteFile(fileNameChunks[1], []byte("ct content"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
 			downloader := download.Client{
-				HTTPClient: httpClient,
-				DownloadClient: downloadClient,
-				Ranger:     ranger,
-				Logger:		logger,
+				HTTPClient:     httpClient,
+				BatchDownloader: batchDownloader,
+				Ranger:         ranger,
+				Logger:         logger,
 			}
 
 			err = downloader.Get(tmpFile, downloadLinkFetcher, GinkgoWriter)
@@ -214,8 +206,80 @@ var _ = Describe("Downloader", func() {
 			Expect(receivedRequest.URL.String()).To(Equal("https://example.com/some-file"))
 			Expect(receivedRequest.Header.Get("Referer")).To(Equal("https://go-pivnet.network.pivotal.io"))
 		})
+		Context("when a retryable error occurs", func() {
+			It("successfully retries the download", func() {
+				ranges := []download.Range{
+					download.NewRange(
+						0,
+						9,
+						http.Header{"Range": []string{"bytes=0-9"}},
+					),
+					download.NewRange(
+						10,
+						19,
+						http.Header{"Range": []string{"bytes=10-19"}},
+					),
+				}
+				ranger.BuildRangeReturns(ranges, nil)
 
-		Context("when an error occurs", func() {
+				var receivedRequest *http.Request
+				httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
+					receivedRequest = req
+
+					return &http.Response{
+						StatusCode:    http.StatusOK,
+						ContentLength: 10,
+						Request: &http.Request{
+							URL: &url.URL{
+								Scheme: "https",
+								Host:   "example.com",
+								Path:   "some-file",
+							},
+						},
+					}, nil
+				}
+
+				tmpFile, err := ioutil.TempFile("", "")
+				Expect(err).NotTo(HaveOccurred())
+
+				fileNameChunks := download.GetFileChunkNames(tmpFile.Name(), ranges)
+				err = ioutil.WriteFile(fileNameChunks[0], []byte("fake produ"), 0644)
+				Expect(err).NotTo(HaveOccurred())
+				err = ioutil.WriteFile(fileNameChunks[1], []byte("ct content"), 0644)
+				Expect(err).NotTo(HaveOccurred())
+
+				downloader := download.Client{
+					HTTPClient:     httpClient,
+					BatchDownloader: batchDownloader,
+					Ranger:         ranger,
+					Logger:         logger,
+				}
+
+				batchDownloaderCallCount := -1
+				batchDownloader.DoStub = func(requests ...*grab.Request) download.ErrorDownload {
+						errorDownloads := []download.ErrorDownload{{
+							CanRetry: true,
+							Error: fmt.Errorf("expected error"),
+						},
+						{
+							CanRetry: false,
+							Error: nil,
+						},
+					}
+					batchDownloaderCallCount++
+					return errorDownloads[batchDownloaderCallCount]
+				}
+
+				err = downloader.Get(tmpFile, downloadLinkFetcher, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
+				content, err := ioutil.ReadAll(tmpFile)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(batchDownloaderCallCount).To(Equal(1))
+				Expect(string(content)).To(Equal("fake product content"))
+			})
+		})
+		Context("when a non-retryable error occurs", func() {
 			Context("when the disk is out of memory", func() {
 				It("returns an error", func() {
 					tooBig := int64(math.MaxInt64)
@@ -239,10 +303,10 @@ var _ = Describe("Downloader", func() {
 					}
 
 					downloader := download.Client{
-						HTTPClient: httpClient,
-						DownloadClient: downloadClient,
-						Ranger:     ranger,
-						Logger:		logger,
+						HTTPClient:     httpClient,
+						BatchDownloader: batchDownloader,
+						Ranger:         ranger,
+						Logger:         logger,
 					}
 
 					file, err := ioutil.TempFile("", "")
@@ -253,7 +317,7 @@ var _ = Describe("Downloader", func() {
 				})
 			})
 
-			Context("when the HEAD request cannot be constucted", func() {
+			Context("when the HEAD request cannot be constructed", func() {
 				It("returns an error", func() {
 					downloader := download.Client{
 						HTTPClient: nil,
@@ -308,6 +372,61 @@ var _ = Describe("Downloader", func() {
 				})
 			})
 
+			Context("and the error occurs while downloading", func() {
+				It("returns an error", func() {
+					ranges := []download.Range{
+						download.NewRange(
+							0,
+							9,
+							http.Header{"Range": []string{"bytes=0-9"}},
+						),
+						download.NewRange(
+							10,
+							19,
+							http.Header{"Range": []string{"bytes=10-19"}},
+						),
+					}
+					ranger.BuildRangeReturns(ranges, nil)
+
+					var receivedRequest *http.Request
+					httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
+						receivedRequest = req
+
+						return &http.Response{
+							StatusCode:    http.StatusOK,
+							ContentLength: 10,
+							Request: &http.Request{
+								URL: &url.URL{
+									Scheme: "https",
+									Host:   "example.com",
+									Path:   "some-file",
+								},
+							},
+						}, nil
+					}
+
+					tmpFile, err := ioutil.TempFile("", "")
+					Expect(err).NotTo(HaveOccurred())
+
+					downloader := download.Client{
+						HTTPClient:     httpClient,
+						BatchDownloader: batchDownloader,
+						Ranger:         ranger,
+						Logger:         logger,
+					}
+
+					batchDownloader.DoStub = func(requests ...*grab.Request) download.ErrorDownload {
+						return download.ErrorDownload{
+							CanRetry: false,
+							Error: fmt.Errorf("expected error"),
+						}
+					}
+
+					err = downloader.Get(tmpFile, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError("download failed: first failed: expected error"))
+				})
+			})
+
 			Context("when the file cannot be written to", func() {
 				It("returns an error", func() {
 					responses := []*http.Response{
@@ -335,10 +454,10 @@ var _ = Describe("Downloader", func() {
 					ranger.BuildRangeReturns([]download.Range{download.NewRange(0, 15, http.Header{})}, nil)
 
 					downloader := download.Client{
-						HTTPClient: httpClient,
-						DownloadClient: downloadClient,
-						Ranger:     ranger,
-						Logger:		logger,
+						HTTPClient:     httpClient,
+						BatchDownloader: batchDownloader,
+						Ranger:         ranger,
+						Logger:         logger,
 					}
 
 					closedFile, err := ioutil.TempFile("", "")

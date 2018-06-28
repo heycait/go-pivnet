@@ -8,8 +8,6 @@ import (
 	"os"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/cavaliercoder/grab"
-	"time"
-	"strings"
 )
 
 //go:generate counterfeiter -o ./fakes/ranger.go --fake-name Ranger . ranger
@@ -22,9 +20,9 @@ type httpClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-//go:generate counterfeiter -o ./fakes/download_client.go --fake-name DownloadClient . downloadClient
-type downloadClient interface {
-	DoBatch (int,...*grab.Request) <-chan *grab.Response
+//go:generate counterfeiter -o ./fakes/batch_downloader.go --fake-name BatchDownloader . batchDownloader
+type batchDownloader interface {
+	Do (...*grab.Request) ErrorDownload
 }
 
 type downloadLinkFetcher interface {
@@ -33,7 +31,7 @@ type downloadLinkFetcher interface {
 
 type Client struct {
 	HTTPClient httpClient
-	DownloadClient downloadClient
+	BatchDownloader batchDownloader
 	Ranger     ranger
 	Logger     logger.Logger
 }
@@ -135,13 +133,10 @@ func (c Client) Get(
 		return fmt.Errorf("could not create request: %s", err)
 	}
 
-	responseChannel := c.DownloadClient.DoBatch(-1, requests...)
-	err = waitForComplete(responseChannel, len(requests))
-
+	err = performDownload(c.BatchDownloader, requests...)
 	if err != nil {
 		return fmt.Errorf("download failed: %s", err)
 	}
-
 
 	c.Logger.Debug(fmt.Sprintf("assembling chunks"))
 	if err := CombineFileChunks(location, fileNameChunks); err != nil {
@@ -171,91 +166,17 @@ func GetRequests(contentURL string, fileNameChunks []string, ranges []Range) ([]
 	return requests, nil
 }
 
-func waitForComplete(respch <-chan *grab.Response, responseSize int) error{
-	const timeoutDuration = 5 * time.Second
-	stalledDownloadChannel := make(chan(*grab.Response))
-	responses := make([]*grab.Response, 0, responseSize)
-	t := time.NewTicker(500 * time.Millisecond)
-	stalledDownloadTimer := time.AfterFunc(timeoutDuration, func() {
-		for _, response := range responses {
-			if response != nil && !response.IsComplete() && response.BytesPerSecond() == 0 {
-				stalledDownloadChannel <- response
+func performDownload(batchDownloader batchDownloader, requests ...*grab.Request) error {
+	errorDownload := batchDownloader.Do(requests...)
+	if errorDownload.Error != nil {
+		if errorDownload.CanRetry { //try one more time
+			errorDownload = batchDownloader.Do(errorDownload.Requests...)
+			if errorDownload.Error != nil {
+				fmt.Errorf("retry failed: %s", errorDownload.Error)
 			}
-		}
-	})
-
-	defer t.Stop()
-	defer stalledDownloadTimer.Stop()
-
-	for {
-		select {
-		case resp := <-respch:
-			if resp != nil {
-				// a new response has been received and has started downloading
-				responses = append(responses, resp)
-			} else {
-				// channel is closed - all downloads are complete
-				var errstrings []string
-				for _, response := range responses {
-					if response != nil && response.Err() != nil {
-						errstrings = append(errstrings, fmt.Sprintf("Error for %v: %v", response.Filename, response.Err().Error()))
-					}
-				}
-				if len(errstrings) > 0 {
-					return fmt.Errorf(strings.Join(errstrings, "\n"))
-				} else {
-					return nil
-				}
-			}
-
-		case <-t.C:
-			// update UI every 200ms
-			updateUI(responses)
-			for _, response := range responses {
-				if response != nil && response.BytesPerSecond() > 0 {
-					stalledDownloadTimer.Reset(timeoutDuration)
-				} else {
-					//everything is ok
-				}
-			}
-
-		case stalledRequest := <-stalledDownloadChannel:
-			close(stalledRequest.Done)
-			return fmt.Errorf("a download timed out for chunk: %s", stalledRequest.Filename)
+		} else {
+			return fmt.Errorf("first failed: %s", errorDownload.Error)
 		}
 	}
-}
-
-func updateUI(responses []*grab.Response) {
-	fmt.Println("***************\n\n\n\n\n********************")
-	// print newly completed downloads
-	for i, resp := range responses {
-		if resp != nil && resp.IsComplete() {
-			if resp.Err() != nil {
-				fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n",
-					resp.Request.URL(),
-					resp.Err())
-			} else {
-				fmt.Printf("Finished %s %d / %d bytes (%d%%)\n",
-					resp.Filename,
-					resp.BytesComplete(),
-					resp.Size,
-					int(100*resp.Progress()))
-			}
-			responses[i] = nil
-		}
-	}
-
-	// print progress for incomplete downloads
-	for _, resp := range responses {
-		if resp != nil {
-			fmt.Printf("Downloading %s %d / %d bytes (%d%%) - %.02fKBp/s ETA: %ds \033[K\n",
-				resp.Filename,
-				resp.BytesComplete(),
-				resp.Size,
-				int(100*resp.Progress()),
-				resp.BytesPerSecond()/1024,
-				int64(resp.ETA().Sub(time.Now()).Seconds()))
-		}
-	}
+	return nil
 }

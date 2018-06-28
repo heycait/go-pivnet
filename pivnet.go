@@ -15,7 +15,6 @@ import (
 	"github.com/pivotal-cf/go-pivnet/download"
 	"github.com/pivotal-cf/go-pivnet/logger"
 	"log"
-	"github.com/cavaliercoder/grab"
 )
 
 const (
@@ -72,12 +71,12 @@ func NewClient(
 		},
 	}
 
-	downloadClient := grab.NewClient()
+	batchDownloader := download.NewBatchDownloader()
 
 	ranger := download.NewRanger(concurrentDownloads)
 	downloader := download.Client{
 		HTTPClient: httpClient,
-		DownloadClient: downloadClient,
+		BatchDownloader: batchDownloader,
 		Ranger:     ranger,
 		Logger:     logger,
 	}
