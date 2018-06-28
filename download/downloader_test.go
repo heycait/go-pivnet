@@ -214,142 +214,142 @@ var _ = Describe("Downloader", func() {
 			Expect(receivedRequest.URL.String()).To(Equal("https://example.com/some-file"))
 			Expect(receivedRequest.Header.Get("Referer")).To(Equal("https://go-pivnet.network.pivotal.io"))
 		})
-	})
 
-	Context("when an error occurs", func() {
-		Context("when the disk is out of memory", func() {
-			It("returns an error", func() {
-				tooBig := int64(math.MaxInt64)
-				responses := []*http.Response{
-					{
-						Request: &http.Request{
-							URL: &url.URL{
-								Scheme: "https",
-								Host:   "example.com",
-								Path:   "some-file",
+		Context("when an error occurs", func() {
+			Context("when the disk is out of memory", func() {
+				It("returns an error", func() {
+					tooBig := int64(math.MaxInt64)
+					responses := []*http.Response{
+						{
+							Request: &http.Request{
+								URL: &url.URL{
+									Scheme: "https",
+									Host:   "example.com",
+									Path:   "some-file",
+								},
 							},
+							ContentLength: tooBig,
 						},
-						ContentLength: tooBig,
-					},
-				}
-				errors := []error{nil, nil}
+					}
+					errors := []error{nil, nil}
 
-				httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
-					count := httpClient.DoCallCount() - 1
-					return responses[count], errors[count]
-				}
+					httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
+						count := httpClient.DoCallCount() - 1
+						return responses[count], errors[count]
+					}
 
-				downloader := download.Client{
-					HTTPClient: httpClient,
-					DownloadClient: downloadClient,
-					Ranger:     ranger,
-					Logger:		logger,
-				}
+					downloader := download.Client{
+						HTTPClient: httpClient,
+						DownloadClient: downloadClient,
+						Ranger:     ranger,
+						Logger:		logger,
+					}
 
-				file, err := ioutil.TempFile("", "")
-				Expect(err).NotTo(HaveOccurred())
+					file, err := ioutil.TempFile("", "")
+					Expect(err).NotTo(HaveOccurred())
 
-				err = downloader.Get(file, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError("file is too big to fit on this drive"))
+					err = downloader.Get(file, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError("file is too big to fit on this drive"))
+				})
 			})
-		})
 
-		Context("when the HEAD request cannot be constucted", func() {
-			It("returns an error", func() {
-				downloader := download.Client{
-					HTTPClient: nil,
-					Ranger:     nil,
-					Logger:		logger,
-				}
-				downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
-					return "%%%", nil
-				}
+			Context("when the HEAD request cannot be constucted", func() {
+				It("returns an error", func() {
+					downloader := download.Client{
+						HTTPClient: nil,
+						Ranger:     nil,
+						Logger:		logger,
+					}
+					downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
+						return "%%%", nil
+					}
 
-				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError(ContainSubstring("failed to construct HEAD request")))
+					err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError(ContainSubstring("failed to construct HEAD request")))
+				})
 			})
-		})
 
-		Context("when the HEAD has an error", func() {
-			It("returns an error", func() {
-				httpClient.DoReturns(&http.Response{}, errors.New("failed request"))
+			Context("when the HEAD has an error", func() {
+				It("returns an error", func() {
+					httpClient.DoReturns(&http.Response{}, errors.New("failed request"))
 
-				downloader := download.Client{
-					HTTPClient: httpClient,
-					Ranger:     nil,
-					Logger:		logger,
-				}
+					downloader := download.Client{
+						HTTPClient: httpClient,
+						Ranger:     nil,
+						Logger:		logger,
+					}
 
-				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError("failed to make HEAD request: failed request"))
+					err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError("failed to make HEAD request: failed request"))
+				})
 			})
-		})
 
-		Context("when building a range fails", func() {
-			It("returns an error", func() {
-				httpClient.DoReturns(&http.Response{Request: &http.Request{
-					URL: &url.URL{
-						Scheme: "https",
-						Host:   "example.com",
-						Path:   "some-file",
-					},
-				},
-				}, nil)
-
-				ranger.BuildRangeReturns([]download.Range{}, errors.New("failed range build"))
-
-				downloader := download.Client{
-					HTTPClient: httpClient,
-					Ranger:     ranger,
-					Logger:		logger,
-				}
-
-				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError("failed to construct range: failed range build"))
-			})
-		})
-
-		Context("when the file cannot be written to", func() {
-			It("returns an error", func() {
-				responses := []*http.Response{
-					{
-						Request: &http.Request{
-							URL: &url.URL{
-								Scheme: "https",
-								Host:   "example.com",
-								Path:   "some-file",
-							},
+			Context("when building a range fails", func() {
+				It("returns an error", func() {
+					httpClient.DoReturns(&http.Response{Request: &http.Request{
+						URL: &url.URL{
+							Scheme: "https",
+							Host:   "example.com",
+							Path:   "some-file",
 						},
 					},
-					{
-						StatusCode: http.StatusPartialContent,
-						Body:       ioutil.NopCloser(strings.NewReader("something")),
-					},
-				}
-				errors := []error{nil, nil}
+					}, nil)
 
-				httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
-					count := httpClient.DoCallCount() - 1
-					return responses[count], errors[count]
-				}
+					ranger.BuildRangeReturns([]download.Range{}, errors.New("failed range build"))
 
-				ranger.BuildRangeReturns([]download.Range{download.NewRange(0, 15, http.Header{})}, nil)
+					downloader := download.Client{
+						HTTPClient: httpClient,
+						Ranger:     ranger,
+						Logger:		logger,
+					}
 
-				downloader := download.Client{
-					HTTPClient: httpClient,
-					DownloadClient: downloadClient,
-					Ranger:     ranger,
-					Logger:		logger,
-				}
+					err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError("failed to construct range: failed range build"))
+				})
+			})
 
-				closedFile, err := ioutil.TempFile("", "")
-				Expect(err).NotTo(HaveOccurred())
+			Context("when the file cannot be written to", func() {
+				It("returns an error", func() {
+					responses := []*http.Response{
+						{
+							Request: &http.Request{
+								URL: &url.URL{
+									Scheme: "https",
+									Host:   "example.com",
+									Path:   "some-file",
+								},
+							},
+						},
+						{
+							StatusCode: http.StatusPartialContent,
+							Body:       ioutil.NopCloser(strings.NewReader("something")),
+						},
+					}
+					errors := []error{nil, nil}
 
-				err = closedFile.Close()
-				Expect(err).NotTo(HaveOccurred())
+					httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
+						count := httpClient.DoCallCount() - 1
+						return responses[count], errors[count]
+					}
 
-				err = downloader.Get(closedFile, downloadLinkFetcher, GinkgoWriter)
-				Expect(err).To(MatchError(ContainSubstring("failed to read information from output file")))
+					ranger.BuildRangeReturns([]download.Range{download.NewRange(0, 15, http.Header{})}, nil)
+
+					downloader := download.Client{
+						HTTPClient: httpClient,
+						DownloadClient: downloadClient,
+						Ranger:     ranger,
+						Logger:		logger,
+					}
+
+					closedFile, err := ioutil.TempFile("", "")
+					Expect(err).NotTo(HaveOccurred())
+
+					err = closedFile.Close()
+					Expect(err).NotTo(HaveOccurred())
+
+					err = downloader.Get(closedFile, downloadLinkFetcher, GinkgoWriter)
+					Expect(err).To(MatchError(ContainSubstring("failed to read information from output file")))
+				})
 			})
 		})
 	})
