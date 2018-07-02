@@ -6,34 +6,72 @@ import (
 	"net/url"
 )
 
-type ProxyRequest struct {
-	Wrapped *grab.Request
+//go:generate counterfeiter -o ./fakes/proxy_request.go --fake-name ProxyRequest . IProxyRequest
+type IProxyRequest interface {
+	Wrapped() *grab.Request
+	URL() *url.URL
 }
 
-func NewProxyRequest(request *grab.Request) *ProxyRequest {
+type ProxyRequest struct {
+	wrapped *grab.Request
+}
+
+func NewProxyRequest(request *grab.Request) IProxyRequest {
 	return &ProxyRequest{
-		Wrapped: request,
+		wrapped: request,
 	}
 }
 
+func (p ProxyRequest) Wrapped() *grab.Request {
+	return p.wrapped
+}
+
 func (p ProxyRequest) URL() *url.URL {
-	return p.Wrapped.URL()
+	return p.Wrapped().URL()
+}
+
+//go:generate counterfeiter -o ./fakes/proxy_response.go --fake-name ProxyResponse . IProxyResponse
+type IProxyResponse interface {
+	Filename() string
+	Size() int64
+	Request() IProxyRequest
+
+	Err() error
+	IsComplete() bool
+	BytesPerSecond() float64
+	BytesComplete() int64
+	Progress() float64
+	Done()
+	ETA() time.Time
 }
 
 type ProxyResponse struct {
 	Wrapped *grab.Response
-	Filename string
-	Size int64
-	Request *ProxyRequest
+	filename string
+	size int64
+	request IProxyRequest
 }
 
-func NewProxyResponse(response *grab.Response) *ProxyResponse {
+func NewProxyResponse(response *grab.Response) IProxyResponse {
 	return &ProxyResponse {
 		Wrapped: response,
-		Filename: response.Filename,
-		Size: response.Size,
-		Request: NewProxyRequest(response.Request),
+		filename: response.Filename,
+		size: response.Size,
+		request: NewProxyRequest(response.Request),
 	}
+}
+
+func (p ProxyResponse) Filename() string {
+	return p.filename
+}
+
+func (p ProxyResponse) Size() int64 {
+	return p.size
+}
+
+
+func (p ProxyResponse) Request() IProxyRequest {
+	return p.request
 }
 
 func (p ProxyResponse) Err() error {
@@ -66,11 +104,11 @@ func (p ProxyResponse) ETA() time.Time {
 
 type ChannelProxy struct {
 	Wrapped <-chan *grab.Response
-	Channel <-chan *ProxyResponse
+	Channel <-chan IProxyResponse
 }
 
 func NewChannelProxy(responseChannel <-chan *grab.Response) *ChannelProxy {
-	channel := make(chan *ProxyResponse)
+	channel := make(chan IProxyResponse)
 	go func() {
 		for {
 			select {
