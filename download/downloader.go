@@ -22,7 +22,7 @@ type httpClient interface {
 
 //go:generate counterfeiter -o ./fakes/batch_downloader.go --fake-name BatchDownloader . batchDownloader
 type batchDownloader interface {
-	Do (...*grab.Request) ErrorDownload
+	Do (...*ProxyRequest) ErrorDownload
 }
 
 type downloadLinkFetcher interface {
@@ -151,22 +151,23 @@ func (c Client) Get(
 	return nil
 }
 
-func GetRequests(contentURL string, fileNameChunks []string, ranges []Range) ([]*grab.Request, error) {
-	var requests []*grab.Request
+func GetRequests(contentURL string, fileNameChunks []string, ranges []Range) ([]*ProxyRequest, error) {
+	var requests []*ProxyRequest
 
 	for i, r := range ranges {
 		request, err := grab.NewRequest(fileNameChunks[i], contentURL)
+
 		if err != nil {
 			return nil, err
 		}
 		request.HTTPRequest.Header = r.HTTPHeader
 		request.HTTPRequest.Header.Add("Referer", "https://go-pivnet.network.pivotal.io")
-		requests = append(requests, request)
+		requests = append(requests, NewProxyRequest(request))
 	}
 	return requests, nil
 }
 
-func performDownload(batchDownloader batchDownloader, requests ...*grab.Request) error {
+func performDownload(batchDownloader batchDownloader, requests ...*ProxyRequest) error {
 	errorDownload := batchDownloader.Do(requests...)
 	if errorDownload.Error != nil {
 		if errorDownload.CanRetry { //try one more time
