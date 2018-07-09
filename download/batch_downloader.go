@@ -5,7 +5,7 @@ import (
 	"time"
 	"strings"
 	"github.com/cavaliercoder/grab"
-	"github.com/sethgrid/multibar"
+	"github.com/sethgrid/curse"
 )
 
 type BatchDownloader struct {
@@ -76,26 +76,9 @@ func MapToErrorDownload(downloadResponses []IProxyResponse) ErrorDownload {
 	}
 }
 
-func newProgressBar(prepend string) *multibar.ProgressBar {
-	return &multibar.ProgressBar{
-		Width:           0,
-		Total:           100,
-		Prepend:         prepend,
-		LeftEnd:         '[',
-		RightEnd:        ']',
-		Fill:            '=',
-		Head:            '>',
-		Empty:           '-',
-		ShowPercent:     true,
-		ShowTimeElapsed: true,
-		StartTime:       time.Now(),
-	}
-}
-
 func WaitForComplete(channelProxy <-chan IProxyResponse, timeoutDuration time.Duration) ErrorDownload{
 	var downloadResponses []IProxyResponse
 	var downloadResponseCounters []int
-	var progressBars []*multibar.ProgressBar
 	ticker := time.NewTicker(500 * time.Millisecond)
 
 	defer ticker.Stop()
@@ -107,16 +90,12 @@ func WaitForComplete(channelProxy <-chan IProxyResponse, timeoutDuration time.Du
 				// a new response has been received and has started downloading
 				downloadResponses = append(downloadResponses, downloadResponse)
 				downloadResponseCounters = append(downloadResponseCounters, 0)
-//				newProgressBar := progressBarContainer.MakeBar(100, fmt.Sprintf("chunk %s", downloadResponse.Filename()))
-				newProgressBar := newProgressBar(fmt.Sprintf("chunk %s", downloadResponse.Filename()))
-				newProgressBar.Line = len(downloadResponses)
-				progressBars = append(progressBars, newProgressBar)
 			} else {
 				return MapToErrorDownload(downloadResponses)
 			}
 
 		case <-ticker.C:
-			updateUI(downloadResponses, progressBars)
+			updateUI(downloadResponses)
 			for i, response := range downloadResponses {
 				if !response.IsComplete() && response.BytesPerSecond() <= 0 && downloadResponseCounters[i] < 10 {
 					downloadResponseCounters[i] ++
@@ -130,39 +109,19 @@ func WaitForComplete(channelProxy <-chan IProxyResponse, timeoutDuration time.Du
 	}
 }
 
-func updateUI(responses []IProxyResponse, progressBars []*multibar.ProgressBar) {
-	//// print newly completed downloads
-	//for i, resp := range responses {
-	//	if resp != nil && resp.IsComplete() {
-	//		if resp.Err() != nil {
-	//			fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n",
-	//				resp.Request().URL(),
-	//				resp.Err())
-	//		} else {
-	//			//fmt.Printf("Finished %s %d / %d bytes (%d%%)\n",
-	//			//	resp.Filename(),
-	//			//	resp.BytesComplete(),
-	//			//	resp.Size(),
-	//			//	int(100*resp.Progress()))
-	//			progressBars[i](int(100*resp.Progress()))
-	//		}
-	//	}
-	//}
-
-	// print progress for incomplete downloads
+func updateUI(responses []IProxyResponse) {
+	c,_ := curse.New()
 	for i, resp := range responses {
-		if resp != nil {
-			//fmt.Printf("Downloading %s %d / %d bytes (%d%%) - %.02fKBp/s ETA: %ds \033[K\n",
-			//	resp.Filename(),
-			//	resp.BytesComplete(),
-			//	resp.Size(),
-			//	int(100*resp.Progress()),
-			//	resp.BytesPerSecond()/1024,
-			//	int64(resp.ETA().Sub(time.Now()).Seconds()))
-			progress := int(100 * resp.Progress())
-			progressBars[i].Prepend = fmt.Sprintf("%s %.02fKB/s", resp.Filename(), resp.BytesPerSecond()/1024)
-			progressBars[i].Width = 50
-			progressBars[i].Update(progress)
-		}
+		lineNumber := len(responses) - i
+		c.MoveUp(lineNumber)
+		c.EraseCurrentLine()
+		fmt.Printf("Downloading %s %d / %d bytes (%d%%) - %.02fKBp/s ETA: %ds \033[K\n",
+			resp.Filename(),
+			resp.BytesComplete(),
+			resp.Size(),
+			int(100*resp.Progress()),
+			resp.BytesPerSecond()/1024,
+			int64(resp.ETA().Sub(time.Now()).Seconds()))
+		c.MoveDown(lineNumber)
 	}
 }

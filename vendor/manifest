@@ -117,14 +117,6 @@
 			"notests": true
 		},
 		{
-			"importpath": "github.com/sethgrid/multibar",
-			"repository": "https://github.com/sethgrid/multibar",
-			"vcs": "git",
-			"revision": "4bf4cf7b87d60bfaf4b4ec40fc7aabf376d0be37",
-			"branch": "master",
-			"notests": true
-		},
-		{
 			"importpath": "github.com/tredoe/term",
 			"repository": "https://github.com/tredoe/term",
 			"vcs": "git",
