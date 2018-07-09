@@ -69,6 +69,14 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/kless/term",
+			"repository": "https://github.com/kless/term",
+			"vcs": "git",
+			"revision": "e551c64f56c0ac0469b4db1b70918e05bfd3ab20",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/mattn/go-runewidth",
 			"repository": "https://github.com/mattn/go-runewidth",
 			"vcs": "git",
@@ -97,6 +105,30 @@
 			"repository": "https://github.com/robdimsdale/sanitizer",
 			"vcs": "git",
 			"revision": "ab2334cb7539a2ce27b7aea53b7d693087b10cd9",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/sethgrid/curse",
+			"repository": "https://github.com/sethgrid/curse",
+			"vcs": "git",
+			"revision": "b3ce8a719db284afc287740e15c011b62900bd28",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/sethgrid/multibar",
+			"repository": "https://github.com/sethgrid/multibar",
+			"vcs": "git",
+			"revision": "4bf4cf7b87d60bfaf4b4ec40fc7aabf376d0be37",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/tredoe/term",
+			"repository": "https://github.com/tredoe/term",
+			"vcs": "git",
+			"revision": "e551c64f56c0ac0469b4db1b70918e05bfd3ab20",
 			"branch": "master",
 			"notests": true
 		},
