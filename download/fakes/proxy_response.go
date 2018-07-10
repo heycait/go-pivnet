@@ -57,6 +57,15 @@ type ProxyResponse struct {
 	errReturnsOnCall map[int]struct {
 		result1 error
 	}
+	CancelStub        func() error
+	cancelMutex       sync.RWMutex
+	cancelArgsForCall []struct{}
+	cancelReturns     struct {
+		result1 error
+	}
+	cancelReturnsOnCall map[int]struct {
+		result1 error
+	}
 	IsCompleteStub        func() bool
 	isCompleteMutex       sync.RWMutex
 	isCompleteArgsForCall []struct{}
@@ -325,6 +334,46 @@ func (fake *ProxyResponse) ErrReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *ProxyResponse) Cancel() error {
+	fake.cancelMutex.Lock()
+	ret, specificReturn := fake.cancelReturnsOnCall[len(fake.cancelArgsForCall)]
+	fake.cancelArgsForCall = append(fake.cancelArgsForCall, struct{}{})
+	fake.recordInvocation("Cancel", []interface{}{})
+	fake.cancelMutex.Unlock()
+	if fake.CancelStub != nil {
+		return fake.CancelStub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fake.cancelReturns.result1
+}
+
+func (fake *ProxyResponse) CancelCallCount() int {
+	fake.cancelMutex.RLock()
+	defer fake.cancelMutex.RUnlock()
+	return len(fake.cancelArgsForCall)
+}
+
+func (fake *ProxyResponse) CancelReturns(result1 error) {
+	fake.CancelStub = nil
+	fake.cancelReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *ProxyResponse) CancelReturnsOnCall(i int, result1 error) {
+	fake.CancelStub = nil
+	if fake.cancelReturnsOnCall == nil {
+		fake.cancelReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.cancelReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *ProxyResponse) IsComplete() bool {
 	fake.isCompleteMutex.Lock()
 	ret, specificReturn := fake.isCompleteReturnsOnCall[len(fake.isCompleteArgsForCall)]
@@ -556,6 +605,8 @@ func (fake *ProxyResponse) Invocations() map[string][][]interface{} {
 	defer fake.setDidTimeoutMutex.RUnlock()
 	fake.errMutex.RLock()
 	defer fake.errMutex.RUnlock()
+	fake.cancelMutex.RLock()
+	defer fake.cancelMutex.RUnlock()
 	fake.isCompleteMutex.RLock()
 	defer fake.isCompleteMutex.RUnlock()
 	fake.bytesPerSecondMutex.RLock()

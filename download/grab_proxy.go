@@ -40,6 +40,7 @@ type IProxyResponse interface {
 	SetDidTimeout()
 
 	Err() error
+	Cancel() error
 	IsComplete() bool
 	BytesPerSecond() float64
 	BytesComplete() int64
@@ -91,6 +92,10 @@ func (p ProxyResponse) Err() error {
 		return fmt.Errorf("a download timed out for chunk: %s", p.filename)
 	}
 	return p.Wrapped.Err()
+}
+
+func (p ProxyResponse) Cancel() error {
+	return p.Wrapped.Cancel()
 }
 
 func (p ProxyResponse) IsComplete() bool {

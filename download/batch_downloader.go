@@ -6,6 +6,8 @@ import (
 	"strings"
 	"github.com/cavaliercoder/grab"
 	"github.com/sethgrid/curse"
+	"io"
+	"os"
 )
 
 type BatchDownloader struct {
@@ -23,7 +25,6 @@ func NewBatchDownloader() *BatchDownloader {
 }
 
 func (c *BatchDownloader) Do (requests ...IProxyRequest) ErrorDownload {
-	const timeoutDuration = 5 * time.Second
 	var realGrabRequests []*grab.Request
 	for _, request := range requests {
 		realGrabRequests = append(realGrabRequests, request.Wrapped())
@@ -32,26 +33,15 @@ func (c *BatchDownloader) Do (requests ...IProxyRequest) ErrorDownload {
 	responseChannel := c.DownloadClient.DoBatch(-1, realGrabRequests...)
 	proxyResponseChannel := NewChannelProxy(responseChannel)
 
-	return WaitForComplete(proxyResponseChannel.Channel, timeoutDuration)
+	return WaitForComplete(proxyResponseChannel.Channel)
 }
 
 func MapToErrorDownload(downloadResponses []IProxyResponse) ErrorDownload {
 	var failedDownloadRequests []IProxyRequest
 	var errstrings []string
 	shouldRetry := true
-
 	for _, downloadResponse := range downloadResponses {
-		if downloadResponse != nil {
-			var errorText string
-			if downloadResponse.Err() == nil {
-				errorText = "no errors!"
-			} else {
-				errorText = downloadResponse.Err().Error()
-			}
-			fmt.Println(fmt.Sprintf("during for loop: DidTimeout: %t Error: %s", downloadResponse.DidTimeout(), errorText))
-		}
-
-		if downloadResponse != nil && downloadResponse.Err() != nil {
+		if downloadResponse.Err() != nil {
 			failedDownloadRequests = append(failedDownloadRequests, downloadResponse.Request())
 			errstrings = append(errstrings, downloadResponse.Err().Error())
 			shouldRetry = shouldRetry && downloadResponse.DidTimeout()
@@ -66,9 +56,6 @@ func MapToErrorDownload(downloadResponses []IProxyResponse) ErrorDownload {
 		shouldRetry = false
 	}
 
-	fmt.Println(fmt.Sprintf("failedDownloadRequests count: %d", len(failedDownloadRequests)))
-	fmt.Println(fmt.Sprintf("shouldRetry: %s", shouldRetry))
-
 	return ErrorDownload{
 		Requests:    failedDownloadRequests,
 		Error:       error,
@@ -76,52 +63,96 @@ func MapToErrorDownload(downloadResponses []IProxyResponse) ErrorDownload {
 	}
 }
 
-func WaitForComplete(channelProxy <-chan IProxyResponse, timeoutDuration time.Duration) ErrorDownload{
-	var downloadResponses []IProxyResponse
-	var downloadResponseCounters []int
+func WaitForComplete(channelProxy <-chan IProxyResponse) ErrorDownload{
 	ticker := time.NewTicker(500 * time.Millisecond)
-
 	defer ticker.Stop()
+	return ProcessDownload(channelProxy, ticker.C, false)
+}
 
+func ProcessDownload(downloadResponseChannel <-chan IProxyResponse, tickerChannel <-chan time.Time, verbose bool) ErrorDownload{
+	var downloadResponses []IProxyResponse
+	startTime := time.Now()
+    stalledCount := 0
 	for {
 		select {
-		case downloadResponse := <-channelProxy:
+		case downloadResponse := <-downloadResponseChannel:
 			if downloadResponse != nil {
-				// a new response has been received and has started downloading
 				downloadResponses = append(downloadResponses, downloadResponse)
-				downloadResponseCounters = append(downloadResponseCounters, 0)
 			} else {
 				return MapToErrorDownload(downloadResponses)
 			}
-
-		case <-ticker.C:
-			updateUI(downloadResponses)
-			for i, response := range downloadResponses {
-				if !response.IsComplete() && response.BytesPerSecond() <= 0 && downloadResponseCounters[i] < 10 {
-					downloadResponseCounters[i] ++
-					if downloadResponseCounters[i] == 10 {
-						response.Done()  //stop download
-						response.SetDidTimeout()
-					}
-				}
-			}
+		case <-tickerChannel:
+			stalledCount = CheckDownloadStatus(os.Stdout, startTime, downloadResponses, verbose, stalledCount)
 		}
 	}
 }
+func CheckDownloadStatus(writer io.Writer, startTime time.Time, downloadResponses []IProxyResponse, verbose bool, stalledCount int) int {
+	elapsedTime := time.Since(startTime)
+	if elapsedTime.Seconds() > 10 {
+		updateUI(writer, downloadResponses, verbose)
+		stalledDownloads := FindStalledDownloads(downloadResponses)
 
-func updateUI(responses []IProxyResponse) {
-	c,_ := curse.New()
-	for i, resp := range responses {
-		lineNumber := len(responses) - i
-		c.MoveUp(lineNumber)
-		c.EraseCurrentLine()
-		fmt.Printf("Downloading %s %d / %d bytes (%d%%) - %.02fKBp/s ETA: %ds \033[K\n",
+		if len(stalledDownloads) > 0 {
+			stalledCount++
+		} else {
+			stalledCount = 0
+		}
+
+		if stalledCount == 10 {
+			for _, stalledDownload := range stalledDownloads {
+				stalledDownload.Cancel()
+				stalledDownload.SetDidTimeout()
+			}
+		}
+	} else {
+		writer.Write([]byte("preparing to download"))
+	}
+	return stalledCount
+}
+
+func FindStalledDownloads(responses []IProxyResponse) []IProxyResponse {
+	stillDownloading := func(response IProxyResponse) bool {
+		return response.BytesPerSecond() > 0
+	}
+
+	stalledDownloads := []IProxyResponse{}
+
+	for _,response := range responses {
+		if response.IsComplete() {
+			continue
+		} else if stillDownloading(response) {
+			return []IProxyResponse{}
+		} else {
+			stalledDownloads = append(stalledDownloads, response)
+		}
+	}
+	return stalledDownloads
+
+}
+
+func updateUI(writer io.Writer, responses []IProxyResponse, verbose bool) {
+	print := func(resp IProxyResponse)  {
+		message := fmt.Sprintf("Downloading %s %d / %d bytes (%d%%) - %.02fKBp/s ETA: %ds \033[K\n",
 			resp.Filename(),
 			resp.BytesComplete(),
 			resp.Size(),
 			int(100*resp.Progress()),
 			resp.BytesPerSecond()/1024,
 			int64(resp.ETA().Sub(time.Now()).Seconds()))
-		c.MoveDown(lineNumber)
+		writer.Write([]byte(message))
+	}
+	if verbose {
+		for _, resp := range responses {
+			print(resp)
+		}
+	} else {
+		c,_ := curse.New()
+		for i, resp := range responses {
+			lineNumber := len(responses) - i
+			c.MoveUp(lineNumber)
+			c.EraseCurrentLine()
+			print(resp)
+			c.MoveDown(lineNumber)
+		}
 	}
 }
