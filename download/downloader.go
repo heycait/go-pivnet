@@ -52,10 +52,6 @@ func (c Client) Get(
 	downloadLinkFetcher downloadLinkFetcher,
 	progressWriter io.Writer,
 ) error {
-	if c.Timeout == 0 {
-		c.Timeout = 5 * time.Second
-	}
-
 	contentURL, err := downloadLinkFetcher.NewDownloadLink()
 	if err != nil {
 		return err

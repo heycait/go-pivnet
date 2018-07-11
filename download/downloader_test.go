@@ -126,6 +126,7 @@ var _ = Describe("Downloader", func() {
 				HTTPClient: httpClient,
 				Ranger:     ranger,
 				Bar:        bar,
+				Timeout:    5*time.Millisecond,
 			}
 
 			tmpFile, err := ioutil.TempFile("", "")
@@ -427,6 +428,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -443,6 +445,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: nil,
 					Ranger:     nil,
 					Bar:        nil,
+					Timeout: 	5 * time.Millisecond,
 				}
 				downloadLinkFetcher.NewDownloadLinkStub = func() (string, error) {
 					return "%%%", nil
@@ -461,6 +464,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     nil,
 					Bar:        nil,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
@@ -485,6 +489,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        nil,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				err := downloader.Get(nil, downloadLinkFetcher, GinkgoWriter)
@@ -519,6 +524,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -559,6 +565,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				file, err := ioutil.TempFile("", "")
@@ -599,6 +606,7 @@ var _ = Describe("Downloader", func() {
 					HTTPClient: httpClient,
 					Ranger:     ranger,
 					Bar:        bar,
+					Timeout: 	5 * time.Millisecond,
 				}
 
 				closedFile, err := ioutil.TempFile("", "")
