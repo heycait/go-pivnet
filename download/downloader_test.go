@@ -18,6 +18,7 @@ import (
 	"net"
 	"syscall"
 	"math"
+	"time"
 )
 
 type EOFReader struct{}
@@ -42,6 +43,14 @@ func (ne NetError) Temporary() bool {
 
 func (ne NetError) Timeout() bool {
 	return true
+}
+
+type ReaderThatDoesntRead struct {}
+func (r ReaderThatDoesntRead) Read(p []byte) (int, error) {
+	for {
+		fmt.Println("not reading")
+		time.Sleep(time.Second)
+	}
 }
 
 var _ = Describe("Downloader", func() {
@@ -328,6 +337,64 @@ var _ = Describe("Downloader", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				Expect(string(content)).To(Equal("something"))
+			})
+		})
+
+		Context("when there is a timeout", func() {
+			It("retries", func() {
+				responses := []*http.Response{
+					{
+						Request: &http.Request{
+							URL: &url.URL{
+								Scheme: "https",
+								Host:   "example.com",
+								Path:   "some-file",
+							},
+						},
+					},
+					{
+						StatusCode: http.StatusPartialContent,
+						Body:       ioutil.NopCloser(io.MultiReader(strings.NewReader("some"), ReaderThatDoesntRead{})),
+					},
+					{
+						StatusCode: http.StatusPartialContent,
+						Body:       ioutil.NopCloser(strings.NewReader("something")),
+					},
+				}
+
+				errors := []error{nil, nil, nil}
+
+				httpClient.DoStub = func(req *http.Request) (*http.Response, error) {
+					count := httpClient.DoCallCount() - 1
+					return responses[count], errors[count]
+				}
+
+				ranger.BuildRangeReturns([]download.Range{download.NewRange(0,15, http.Header{})}, nil)
+
+				downloader := download.Client{
+					HTTPClient: httpClient,
+					Ranger:     ranger,
+					Bar:        bar,
+					Timeout: 	5 * time.Millisecond,
+				}
+
+				tmpFile, err := ioutil.TempFile("", "")
+				Expect(err).NotTo(HaveOccurred())
+
+				err = downloader.Get(tmpFile, downloadLinkFetcher, GinkgoWriter)
+				Expect(err).NotTo(HaveOccurred())
+
+				stats, err := tmpFile.Stat()
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(stats.Size()).To(BeNumerically(">", 0))
+				Expect(bar.AddArgsForCall(0)).To(Equal(-4))
+
+				content, err := ioutil.ReadAll(tmpFile)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(string(content)).To(Equal("something"))
+
 			})
 		})
 	})
